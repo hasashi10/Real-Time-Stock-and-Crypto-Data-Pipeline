@@ -1,6 +1,7 @@
 import config
 import csv
 import json
+import time
 from datetime import datetime
 from alpaca.data.live import CryptoDataStream
 #NEW: import the kafkaproducer
@@ -32,11 +33,13 @@ LOG_FILE = 'market_ticks.csv'
 
 #this dictonary will hold the last price for each symbol
 previous_prices = {}
+trend_tracker= {}
+
 #----file setup----
 #open the csv file in 'append' mode and create a writer'
 try:
     csv_file = open(LOG_FILE, 'a', newline='')
-    fieldnames = [ 'timestamp', 'symbol' , 'price', 'direction']
+    fieldnames = [ 'timestamp', 'symbol' , 'price', 'direction','precentage']
     writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
 
     #write headers only if the file is new (empty)
@@ -58,14 +61,32 @@ async def on_quote(data):
     symbol = data.symbol
     price = data.ask_price
     timestamp = data.timestamp.isoformat()
+    current_time = time.time()
 
     direction = None #'up' or 'down'
+    precentage = 0.0
 
     if symbol in previous_prices:
-        if price > previous_prices[symbol]:
+        prev_price = previous_prices[symbol]
+        precentage = ((price - prev_price) / prev_price) * 100        
+        if price > prev_price:
             direction = 'UP'
-        elif price < previous_prices[symbol]:
+        elif price < prev_price:
             direction = 'DOWN'
+    #--- trend tracking & notification logic ---
+    if direction:
+        if symbol not in trend_tracker:
+            trend_tracker[symbol] = {'direction': direction, "start_time": current_time}
+        else:
+            if trend_tracker[symbol]['direction'] == direction: 
+                elapsed_time = current_time - trend_tracker[symbol]['start_time']
+                if elapsed_time > 60:
+                    if direction == 'up':
+                        print(f" ALERT Notification: {symbol} has been trending UP for  over 1 minute!")
+                    trend_tracker[symbol]['start_time'] = current_time
+            else:
+                trend_tracker[symbol] = {'direction': direction, 'start_time': current_time}
+
 #updates the previous price for the *next* tick
     previous_prices[symbol] = price
 
@@ -75,8 +96,8 @@ async def on_quote(data):
             'timestamp': timestamp,
             'symbol': symbol,
             'price': price,
-            'direction': direction
-        }
+            'direction': direction,
+            'precentage': round(precentage, 4)        }
         #1. this part writes to csv
         #print to console and write to csv
         print("!!!!!!!! Price changed, logging to csv!!!!!!!!")

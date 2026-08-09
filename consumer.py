@@ -3,109 +3,104 @@ from kafka import KafkaConsumer
 import json
 import time
 
-# --- Kafka Consumer Setup ---
+# kafka consumer setup---
 KAFKA_TOPIC = 'market_ticks'
 
-print("Connecting to Kafka...")
+print("connecting to kafka. . .")
 try:
     consumer = KafkaConsumer(
         KAFKA_TOPIC,
-        bootstrap_servers=['localhost:9092'],
-        # This deserializes the JSON bytes back into a Python dictionary
-        value_deserializer=lambda v: json.loads(v.decode('utf-8')),
-        # This makes sure we read from the beginning of the topic if we're a new consumer
-        auto_offset_reset='earliest'
+        bootstrap_servers = ['localhost:9092'],
+        #this converts the json bytes into a python dictionary
+        value_deserializer = lambda v:json.loads(v.decode('utf-8')),
+        #this makes sure we read from the begin of the topic if we're a new consumer
+        auto_offset_reset = 'earliest'
     )
-    print("Kafka Consumer connected successfully.")
+    print("kafka consumer connected succesfully.")
 except Exception as e:
-    print(f"!!!!!!!! FAILED TO CONNECT TO KAFKA !!!!!!")
-    print(f"Error: {e}")
-    print("Please make sure your Docker containers are running ('docker-compose up -d').")
+    print(f" FAILED TO CONNECT TO KAFKA !!!")
+    print(f" Error: {e}")
+    print("please make sure the Docker containers are running ( ' Docker-compose up -d').")
     exit()
 
-
-# --- Database Connection ---
+# database connection-----
 def get_db_connection():
     """
-    Connects to the Postgres/TimescaleDB database.
-    Will keep retrying until it succeeds.
+    connects to the progres/TimescaleDB database. we use the TimescaleDB extension because it
+    stores thousands of timestamps and prices for this type of project
+    this will keep trying until it succeds.
     """
     while True:
         try:
             conn = psycopg2.connect(
-                # This matches your docker-compose.yml file
+                #this matches my docker-compose.yml file
                 host="localhost",
                 database="marketdata",
                 user="admin",
                 password="password"
             )
-            print("Database connection successful.")
+            print("database connection succesful.")
             return conn
         except psycopg2.OperationalError as e:
-            print(f"Database connection failed: {e}. Retrying in 5 seconds...")
+            print(f"Database connection failed:{e}. retrying in 5 seconds.....")
             time.sleep(5)
-
 def setup_database(conn):
     """
-    Creates our main table and turns it into a TimescaleDB hypertable.
+    here is where we create our main table, columns and converts it
+    in to a timescaleDB Hypertable
     """
     with conn.cursor() as cur:
-        # 1. Create the table (if it doesn't exist)
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS market_ticks (
+            CREATE TABLE IF NOT EXISTS market_ticks(
                 time TIMESTAMPTZ NOT NULL,
-                symbol VARCHAR(10) NOT NULL,
-                price DOUBLE PRECISION,
-                direction VARCHAR(4)
-            );
+                symbol TEXT NOT NULL,
+                price DOUBLE PRECISION NOT NULL,
+                direction TEXT NOT NULL,
+                precentage DOUBLE PRECISION NOT NULL
+            );"""
+        )
+        cur.execute("""
+            ALTER TABLE market_ticks
+            ADD COLUMN IF NOT EXISTS precentage DOUBLE PRECISION DEFAULT 0.0;
         """)
-        
-        # 2. Turn it into a Hypertable (if it's not already)
-        # This is the "magic" of TimescaleDB for fast time-series data
         cur.execute("""
             SELECT create_hypertable('market_ticks', 'time', if_not_exists => TRUE);
         """)
-        
         conn.commit()
-        print("Table 'market_ticks' and hypertable are ready.")
-
-# --- Main Consumer Loop ---
+        print("table 'market_ticks' and hypertable are ready with 'precentage' column.")
+    #---main consumer loop---
 def consume_and_write():
     conn = get_db_connection()
     setup_database(conn)
-    
     insert_sql = """
-        INSERT INTO market_ticks (time, symbol, price, direction)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO market_ticks(time, symbol, price, direction, precentage)
+        VALUES (%s, %s, %s, %s, %s);
     """
-    
-    print("\nStarting Kafka consumer loop... Waiting for messages...")
+    print("\nStarting kafka consumer loop... waiting for messages... ")
     try:
         for message in consumer:
-            # message.value is the dictionary we sent from the producer
             data = message.value
-            
             try:
                 with conn.cursor() as cur:
                     cur.execute(insert_sql, (
                         data['timestamp'],
                         data['symbol'],
                         data['price'],
-                        data['direction']
+                        data['direction'],
+                        data['precentage'] if 'precentage' in data else 0.0
                     ))
                     conn.commit()
-                    print(f"--- Wrote to DB: {data['symbol']} @ {data['price']}")
-            
-            except (psycopg2.Error, json.JSONDecodeError) as e:
-                print(f"Error writing to DB: {e}")
-                conn.rollback() # Roll back the failed transaction
-    
+                    print(f"--- wrote to DB: {data['symbol']}@{data['price']}({data.get('precentage', 0.0)}%)")
+                    
+            except(psycopg2.Error, json.JSONDecodeError) as e:
+                print(f"error writing to DB: {e}")
+                conn.rollback()
     except KeyboardInterrupt:
-        print("\nStopping consumer...")
+        print("\nStoppiing consumer...")
     finally:
         conn.close()
         consumer.close()
-        print("Database and Kafka connections closed.")
-
+        print("database and kafka connections closed.")
 if __name__ == "__main__":
     consume_and_write()
+
