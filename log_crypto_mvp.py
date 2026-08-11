@@ -13,6 +13,8 @@ try:
     producer = KafkaProducer(
         #this is the address we exposed in docker-compose.yml
         bootstrap_servers=['localhost:9092'],
+        #Serialize the string key into bytes using utf-8
+        key_serializer=lambda k: k.encode('utf-8'),
         #this serializes our data (dictionary) into JSON bytes
         value_serializer=lambda v: json.dumps(v).encode('utf-8')
     )
@@ -81,7 +83,7 @@ async def on_quote(data):
             if trend_tracker[symbol]['direction'] == direction: 
                 elapsed_time = current_time - trend_tracker[symbol]['start_time']
                 if elapsed_time > 60:
-                    if direction == 'up':
+                    if direction == 'UP':
                         print(f" ALERT Notification: {symbol} has been trending UP for  over 1 minute!")
                     trend_tracker[symbol]['start_time'] = current_time
             else:
@@ -106,7 +108,7 @@ async def on_quote(data):
         csv_file.flush() #ensure it's written immediately
         #2. this is where is write to kafka
         print("!!!!!!!!PRODUCING TO KAFKA !!!!!!!")
-        producer.send(KAFKA_TOPIC, value=log_data)
+        producer.send(KAFKA_TOPIC, key=log_data["symbol"], value=log_data)
     else:
         print(f"----(price for {symbol} is unchanged. not logging.)")
 
