@@ -2,6 +2,30 @@ import psycopg2
 from kafka import KafkaConsumer
 import json
 import time
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    datefmt='%y-%m-%d %H:%M:%S'
+)
+
+def validate_payload(payload: dict) -> bool:
+    """
+    checks if the incoming kafka message has the required fields and correct data types
+    """
+    required_fields =['symbol', 'price', 'timestamp', 'direction', 'precentage']
+    #checks for missing fields
+    for field in required_fields:
+        if field not in payload:
+            logging.error(f"validation failed. missing field: '{field}'. payload: {payload}")
+            return False
+    #checks data types (defensive parsing)
+    if not isinstance(payload.get('price'), (int, float)):
+        logging.error(f"validation failed 'price' must be a number, got {type(payload.get('price'))}.")
+        return False
+    return True
+
 
 # kafka consumer setup---
 KAFKA_TOPIC = 'market_ticks'
@@ -80,6 +104,9 @@ def consume_and_write():
     try:
         for message in consumer:
             data = message.value
+            if not validate_payload(data):
+                logging.warning(f"skipped invalid message for symbol: {data.get('symbol', 'UNKNOWN')}")
+                continue
             try:
                 with conn.cursor() as cur:
                     cur.execute(insert_sql, (
@@ -90,10 +117,10 @@ def consume_and_write():
                         data['precentage'] if 'precentage' in data else 0.0
                     ))
                     conn.commit()
-                    print(f"--- wrote to DB: {data['symbol']}@{data['price']}({data.get('precentage', 0.0)}%)")
+                    logging.info(f"--- wrote to DB: {data['symbol']}@{data['price']}({data.get('precentage', 0.0)}%)")
                     
             except(psycopg2.Error, json.JSONDecodeError) as e:
-                print(f"error writing to DB: {e}")
+                logging.error(f"error writing to DB: {e}")
                 conn.rollback()
     except KeyboardInterrupt:
         print("\nStoppiing consumer...")
