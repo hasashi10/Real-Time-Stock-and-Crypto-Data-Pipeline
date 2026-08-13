@@ -1,133 +1,53 @@
-#Real-Time Stock and Crypto Data Pipeline
+# Real-Time Market Data & Crypto Pipeline
 
-This is a complete, end-to-end data engineering project that captures real-time stock and cryptocurrency data, processes it, and stores it in a time-series database.
+## 👋 The Story Behind the Code
+Hi! I built this pipeline to bridge the gap between classroom theory and real-world system architecture. As I focus my career on Data Engineering and Cybersecurity, I wanted a hands-on environment to deeply learn Python scripting, handle messy live data, and understand how enterprise systems stay resilient under pressure. 
 
-The pipeline is built on a modern, decoupled architecture using Python, Apache Kafka, and TimescaleDB, with all infrastructure managed by Docker.
+This isn't just a tutorial project—it's a live sandbox where I am actively learning how to build fault-tolerant data streams, secure containers, and optimize databases. 
 
-Project Architecture
+## 📖 Project Overview
+A resilient, real-time data engineering pipeline designed to ingest, process, and store live stock and cryptocurrency market ticks. By transforming raw WebSocket streams into highly optimized time-series data, this project demonstrates core concepts in data quality, decoupled architecture, and system security.
 
-This project uses a producer-consumer model to create a resilient and scalable pipeline:
+## 🛠️ Technology Stack
+*   **Data Ingestion:** Alpaca API (WebSockets)
+*   **Message Broker:** Apache Kafka (Decoupling, buffering, and stream processing)
+*   **Database:** TimescaleDB / PostgreSQL (Hypertable-optimized time-series storage)
+*   **Containerization:** Docker & Docker Compose
+*   **Language:** Python (3.x)
+*   **Visualization:** Grafana (Upcoming)
 
-Producers: Two independent Python scripts (producer_stocks.py and producer_crypto.py) connect to the Alpaca WebSocket APIs to stream live trade/quote data.
+---
 
-Message Queue: When a price change is detected, the producers send the data to an Apache Kafka topic (market_ticks). This decouples the ingestion from the database, allowing the system to handle high volumes of data without data loss.
+## ✅ Currently Implemented Features
 
-Consumer: A single consumer script (consumer.py) subscribes to the Kafka topic, reads the messages in real-time, and writes them to a TimescaleDB (PostgreSQL) database for permanent storage and analysis.
+### 1. Core Data Flow
+*   Live WebSocket connection to Alpaca API filtering for specific Crypto/Stock tickers.
+*   Kafka Producer script (`log_crypto_mvp.py`) publishing formatted JSON payloads.
+*   Kafka Consumer script (`consumer.py`) reading streams and executing rapid database inserts.
+*   Automated TimescaleDB schema generation (Hypertables).
 
-Local Backup: The producers also write a local .csv backup for redundancy.
+### 2. Phase 1: Data Quality & Defensive Parsing
+*   **Schema Validation:** Incoming Kafka JSON payloads are intercepted and validated against a strict schema before database insertion.
+*   **Defensive Type Checking:** Verifies numeric types (`int`, `float`) for critical trading metrics (e.g., `price`) to prevent database type-mismatch crashes.
+*   **Non-Blocking Control Flow:** Invalid payloads trigger structured warning logs and utilize Python `continue` statements to safely bypass execution without halting the consumer loop.
+*   **Structured Logging:** Standardized Python `logging` capturing `timestamp`, `levelname`, and operational context for future containerized log aggregation.
 
-Architecture Diagram
+---
 
-flowchart TD
-    subgraph "Data Sources (Alpaca API)"
-        A[Stock WebSocket]
-        B[Crypto WebSocket]
-    end
+## 🚀 Development Roadmap
 
-    subgraph "Python Producers"
-        P1(producer_stocks.py)
-        P2(producer_crypto.py)
-    end
+*   [x] **Phase 1: Data Quality & Validation** (Defensive parsing, error handling, logging)
+*   [ ] **Phase 2: Kafka Architecture** (Partitioning, keys, topic design, consumer groups)
+*   [ ] **Phase 3: TimescaleDB Optimization** (Continuous aggregates, hypertables, compression)
+*   [ ] **Phase 4: Pipeline Monitoring** (Grafana metrics for both market data & system health)
+*   [ ] **Phase 5: Docker & Security** (Health checks, secrets management via `.env`)
+*   [ ] **Phase 6: Automated Testing** (Unit testing parsing, validation, database writes)
+*   [ ] **Phase 7: Documentation** (Architecture diagrams, final polish)
 
-    subgraph "Messaging & Storage (Docker)"
-        K[Apache Kafka <br> (Topic: market_ticks)]
-        DB[(TimescaleDB <br> /Postgres)]
-    end
+---
 
-    subgraph "Python Consumer"
-        C(consumer.py)
-    end
-
-    A --> P1
-    B --> P2
-
-    P1 --"JSON Message"--> K
-    P2 --"JSON Message"--> K
-
-    K --"Reads Messages"--> C
-
-    C --"Writes Data"--> DB
-
-
-Technologies Used
-
-Python: The core language for all scripts.
-
-Alpaca API: Real-time WebSocket API for stock and crypto data.
-
-Apache Kafka: High-throughput, distributed message queue.
-
-PostgreSQL / TimescaleDB: Time-series database for efficient storage and querying of market data.
-
-Docker / Docker Compose: For containerizing and running the backend infrastructure (Kafka, Zookeeper, and TimescaleDB).
-
-Python Libraries: alpaca-py, kafka-python, psycopg2-binary.
-
-How to Run This Project
-
-Prerequisites:
-
-Python 3.10+
-
-Docker Desktop (must be running)
-
-An Alpaca Paper Trading account (to get API keys)
-
-Set Up Environment:
-
-Create a Python virtual environment:
-
-python -m venv venv
-.\venv\Scripts\activate
-
-
-Install the required libraries:
-
-pip install -r requirements.txt
-
-
-Add API Keys:
-
-Create a file named config.py.
-
-Add your Alpaca API keys to this file:
-
-# config.py
-API_KEY = "YOUR_ALPACA_KEY_ID"
-SECRET_KEY = "YOUR_ALPACA_SECRET_KEY"
-
-
-Start the Infrastructure:
-
-This one command will start Kafka, Zookeeper, and the TimescaleDB database in the background.
-
-docker-compose up -d
-
-
-Run the Pipeline:
-
-You need to run the consumer and producers in separate terminals.
-
-Terminal 1 (Run the Consumer):
-
-.\venv\Scripts\activate
-python consumer.py
-
-
-(This will connect and wait for messages...)
-
-Terminal 2 (Run the Crypto Producer):
-
-.\venv\Scripts\activate
-python producer_crypto.py  # Or whatever you named your crypto script
-
-
-Terminal 3 (Run the Stock Producer):
-
-.\venv\Scripts\activate
-python producer_stocks.py   # Or whatever you named your stock script
-
-
-View Your Data:
-
-You can now connect to the marketdata database (at localhost:5432) using any SQL client (like the VSCode PostgreSQL extension) to see your data flowing into the market_ticks table.
+## 💻 How to Run Locally (MVP)
+1. Start the infrastructure: `docker-compose up -d`
+2. Activate Virtual Environment: `.\venv\Scripts\Activate.ps1`
+3. Run Consumer: `python consumer.py`
+4. Run Producer: `python log_crypto_mvp.py`
