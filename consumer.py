@@ -3,30 +3,29 @@ from kafka import KafkaConsumer
 import json
 import time
 import logging
+from pydantic import BaseModel, field_validator, ValidationError
+from datetime import datetime
 
+class TradeData(BaseModel):
+    symbol: str
+    price: float
+    timestamp: datetime
+    direction: str
+    precentage: float
+
+    @field_validator('price')
+    @classmethod
+    def check_valid_price(cls, value):
+        if value <= 0:
+            raise ValueError(f"suspicious price detectect: {value}")
+        return value
+
+    
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     datefmt='%y-%m-%d %H:%M:%S'
 )
-
-def validate_payload(payload: dict) -> bool:
-    """
-    checks if the incoming kafka message has the required fields and correct data types
-    """
-    required_fields =['symbol', 'price', 'timestamp', 'direction', 'precentage']
-    #checks for missing fields
-    for field in required_fields:
-        if field not in payload:
-            logging.error(f"validation failed. missing field: '{field}'. payload: {payload}")
-            return False
-    #checks data types (defensive parsing)
-    if not isinstance(payload.get('price'), (int, float)):
-        logging.error(f"validation failed 'price' must be a number, got {type(payload.get('price'))}.")
-        return False
-    return True
-
-
 # kafka consumer setup---
 KAFKA_TOPIC = 'market_ticks'
 
@@ -104,22 +103,24 @@ def consume_and_write():
     try:
         for message in consumer:
             data = message.value
-            if not validate_payload(data):
-                logging.warning(f"skipped invalid message for symbol: {data.get('symbol', 'UNKNOWN')}")
+            try:
+                clean_trade = TradeData.model_validate(data)
+            except ValidationError as e:
+                logging.warning(f"___invalid data Rejected____\n{e}")
                 continue
             try:
                 with conn.cursor() as cur:
                     cur.execute(insert_sql, (
-                        data['timestamp'],
-                        data['symbol'],
-                        data['price'],
-                        data['direction'],
-                        data['precentage'] if 'precentage' in data else 0.0
+                        clean_trade.timestamp,
+                        clean_trade.symbol,
+                        clean_trade.price,
+                        clean_trade.direction,
+                        clean_trade.precentage
                     ))
                     conn.commit()
-                    logging.info(f"--- wrote to DB: {data['symbol']}@{data['price']}({data.get('precentage', 0.0)}%)")
-                    
-            except(psycopg2.Error, json.JSONDecodeError) as e:
+                    logging.info(f"--- wrote to DB: {clean_trade.symbol}@{clean_trade.price}({clean_trade.precentage}%)")
+
+            except psycopg2.Error as e:
                 logging.error(f"error writing to DB: {e}")
                 conn.rollback()
     except KeyboardInterrupt:

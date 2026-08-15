@@ -1,4 +1,4 @@
-import config
+import os
 import csv
 import json
 import time
@@ -28,8 +28,8 @@ except Exception as e:
 KAFKA_TOPIC = 'market_ticks'
 
 #____configuration______
-API_KEY = config.API_KEY
-SECRET_KEY = config.SECRET_KEY
+API_KEY = os.getenv("ALPACA_API_KEY")
+SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
 SYMBOLS = ['BTC/USD', 'ETH/USD', 'DOGE/USD'] #tickers to watch
 LOG_FILE = 'market_ticks.csv'
 
@@ -78,14 +78,14 @@ async def on_quote(data):
     #--- trend tracking & notification logic ---
     if direction:
         if symbol not in trend_tracker:
-            trend_tracker[symbol] = {'direction': direction, "start_time": current_time}
+            trend_tracker[symbol] = {'direction': direction, "start-time": current_time}
         else:
             if trend_tracker[symbol]['direction'] == direction: 
-                elapsed_time = current_time - trend_tracker[symbol]['start_time']
+                elapsed_time = current_time - trend_tracker[symbol]['start-time']
                 if elapsed_time > 60:
                     if direction == 'UP':
                         print(f" ALERT Notification: {symbol} has been trending UP for  over 1 minute!")
-                    trend_tracker[symbol]['start_time'] = current_time
+                    trend_tracker[symbol]['start-time'] = current_time
             else:
                 trend_tracker[symbol] = {'direction': direction, 'start_time': current_time}
 
@@ -108,7 +108,12 @@ async def on_quote(data):
         csv_file.flush() #ensure it's written immediately
         #2. this is where is write to kafka
         print("!!!!!!!!PRODUCING TO KAFKA !!!!!!!")
-        producer.send(KAFKA_TOPIC, key=log_data["symbol"], value=log_data)
+        routing_key = log_data['symbol']
+        producer.send(
+            KAFKA_TOPIC,
+            key=routing_key,
+            value=log_data
+        )
     else:
         print(f"----(price for {symbol} is unchanged. not logging.)")
 

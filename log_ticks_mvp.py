@@ -1,4 +1,4 @@
-import config
+import os
 import csv
 import json
 import time
@@ -10,6 +10,7 @@ from kafka import KafkaProducer
 try:
     producer = KafkaProducer(
         bootstrap_servers=['localhost:9092'],
+        key_serializer=lambda k: k.encode('utf-8'),
         value_serializer=lambda v: json.dumps(v).encode('utf-8')
     )
     print("kafka producer connected successfully.")
@@ -22,8 +23,8 @@ except Exception as e:
 KAFKA_TOPIC = 'market_ticks'
 
 #____configuration______
-API_KEY = config.API_KEY
-SECRET_KEY = config.SECRET_KEY
+API_KEY = os.getenv("ALPACA_API_KEY")
+SECRET_KEY = os.getenv("ALPACA_SECRET_KEY")
 SYMBOLS = ['AAPL', 'MSFT', 'GOOG', 'BLK'] #tickers to watch
 LOG_FILE = 'market_ticks.csv'
 
@@ -71,10 +72,10 @@ async def on_trade(data):
     #-- trend tracking & notification logic ---
     if direction:
         if symbol not in trend_tracker:
-            trend_tracker[symbol] = {'direction': direction, 'start_time': current_time}
+            trend_tracker[symbol] = {'direction': direction, 'start-time': current_time}
         else:
             if trend_tracker[symbol]['direction'] == direction:
-                elapsed_time = current_time - trend_tracker[symbol]['start_time']
+                elapsed_time = current_time - trend_tracker[symbol]['start-time']
                 if elapsed_time > 60:
                     if direction == 'UP':
                         print(f" ALERT Notification: {symbol} has been trending UP for over 1 minute!")
@@ -100,7 +101,12 @@ async def on_trade(data):
         csv_file.flush() #ensure it's written immediately
         #print to send to Kafka
         print("!!!!!!!!PRODUCING TO KAFKA !!!!!!!")
-        producer.send(KAFKA_TOPIC, value=log_data)
+        routing_key = log_data['symbol']
+        producer.send(
+            KAFKA_TOPIC, 
+            key=routing_key, 
+            value=log_data
+        )
 #---main connection---
 def run_connection():
     print("connecting to Alpaca WebSocket. . .")
