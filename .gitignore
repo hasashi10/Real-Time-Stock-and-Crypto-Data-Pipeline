@@ -1,8 +1,11 @@
 venv/
+env/
+.env #secrets and configs
+*.log
+
 __pycache__/
 *.pyc
 *.csv
-config.py 
 *.db
 .vscode/
 .idea/
