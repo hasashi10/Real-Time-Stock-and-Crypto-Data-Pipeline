@@ -6,6 +6,9 @@ from datetime import datetime
 from alpaca.data.live import StockDataStream
 from alpaca.data.enums import DataFeed
 from kafka import KafkaProducer
+from dotenv import load_dotenv
+
+load_dotenv() # Load environment variables from .env file
 
 try:
     producer = KafkaProducer(
@@ -81,7 +84,7 @@ async def on_trade(data):
                         print(f" ALERT Notification: {symbol} has been trending UP for over 1 minute!")
                     trend_tracker[symbol]['start-time'] = current_time
             else:
-                trend_tracker[symbol] = {'direction': direction, ' start_time': current_time}
+                trend_tracker[symbol] = {'direction': direction, ' start-time': current_time}
     #updates the previous price for the *next* tick
     previous_prices[symbol] = price
 

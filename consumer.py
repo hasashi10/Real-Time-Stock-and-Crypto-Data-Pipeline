@@ -24,7 +24,7 @@ class TradeData(BaseModel):
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
-    datefmt='%y-%m-%d %H:%M:%S'
+    datefmt='%y-%m-%d %H:%M'
 )
 # kafka consumer setup---
 KAFKA_TOPIC = 'market_ticks'
@@ -34,6 +34,7 @@ try:
     consumer = KafkaConsumer(
         KAFKA_TOPIC,
         bootstrap_servers = ['localhost:9092'],
+        group_id='market_data_team',
         #this converts the json bytes into a python dictionary
         value_deserializer = lambda v:json.loads(v.decode('utf-8')),
         #this makes sure we read from the begin of the topic if we're a new consumer
@@ -74,14 +75,21 @@ def setup_database(conn):
     """
     with conn.cursor() as cur:
         cur.execute("""
-            CREATE TABLE IF NOT EXISTS market_ticks(
+            CREATE TABLE IF NOT EXISTS market_ticks (
                 time TIMESTAMPTZ NOT NULL,
                 symbol TEXT NOT NULL,
                 price DOUBLE PRECISION NOT NULL,
-                direction TEXT NOT NULL,
-                precentage DOUBLE PRECISION NOT NULL
-            );"""
-        )
+                direction TEXT,
+                precentage DOUBLE PRECISION DEFAULT 0.0
+            );
+        """)
+        conn.commit()
+        print("table 'market_ticks' created.")
+
+        cur.execute("""
+            ALTER DATABASE marketdata SET timezone TO 'America/ New_York';
+        """)
+        
         cur.execute("""
             ALTER TABLE market_ticks
             ADD COLUMN IF NOT EXISTS precentage DOUBLE PRECISION DEFAULT 0.0;
@@ -91,10 +99,54 @@ def setup_database(conn):
         """)
         conn.commit()
         print("table 'market_ticks' and hypertable are ready with 'precentage' column.")
+def setup_aggregates(conn):
+    """
+    Creates the market_1m_candle continuous aggregate, 
+    pre-computing 1-minute OHLC candle from raw ticks
+    """
+    with conn.cursor() as cur:
+            cur.execute("""
+                CREATE MATERIALIZED VIEW IF NOT EXISTS market_1m_candles
+                with (timescaledb.continuous) AS
+                SELECT
+                    time_bucket('1 minute', time) AS bucket,
+                    symbol,
+                    FIRST(price, time) AS open,
+                    MAX(price) AS high,
+                    MIN(price) AS low,
+                    LAST(price, time) AS close,
+                    COUNT(*) AS trade_count
+                FROM market_ticks
+                GROUP BY bucket, symbol
+                WITH NO DATA;
+             """)
+            conn.commit()
+            print("continuous aggrigate 'market_1m_candles' is ready.")
+
+            cur.execute("""
+                SELECT COUNT(*) FROM timescaledb_information.jobs
+                WHERE hypertable_name = (
+                    SELECT materialization_hypertable_name
+                    FROM timescaledb_information.continuous_aggregates
+                    WHERE view_name = 'market_1m_candles');
+            """)
+            policy_exists = cur.fetchone()[0] > 0
+            if not policy_exists:
+                cur.execute("""
+                    SELECT add_continuous_aggregate_policy('market_1m_candles',
+                    start_offset => INTERVAL '1 hour',
+                    end_offset => INTERVAL '1 minute',
+                    schedule_interval => INTERVAL '1 minute');
+                """ )
+                conn.commit()
+                print("refresh policy for 'market_1m_candles' is set")
+            else:
+                print("refresh policy for 'market_1m_candles' already exists, skipping.")
     #---main consumer loop---
 def consume_and_write():
     conn = get_db_connection()
     setup_database(conn)
+    setup_aggregates(conn) 
     insert_sql = """
         INSERT INTO market_ticks(time, symbol, price, direction, precentage)
         VALUES (%s, %s, %s, %s, %s);
