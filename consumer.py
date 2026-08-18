@@ -11,7 +11,7 @@ class TradeData(BaseModel):
     price: float
     timestamp: datetime
     direction: str
-    precentage: float
+    percentage: float
 
     @field_validator('price')
     @classmethod
@@ -80,7 +80,7 @@ def setup_database(conn):
                 symbol TEXT NOT NULL,
                 price DOUBLE PRECISION NOT NULL,
                 direction TEXT,
-                precentage DOUBLE PRECISION DEFAULT 0.0
+                percentage DOUBLE PRECISION DEFAULT 0.0
             );
         """)
         conn.commit()
@@ -92,13 +92,13 @@ def setup_database(conn):
         
         cur.execute("""
             ALTER TABLE market_ticks
-            ADD COLUMN IF NOT EXISTS precentage DOUBLE PRECISION DEFAULT 0.0;
+            ADD COLUMN IF NOT EXISTS percentage DOUBLE PRECISION DEFAULT 0.0;
         """)
         cur.execute("""
             SELECT create_hypertable('market_ticks', 'time', if_not_exists => TRUE);
         """)
         conn.commit()
-        print("table 'market_ticks' and hypertable are ready with 'precentage' column.")
+        print("table 'market_ticks' and hypertable are ready with 'percentage' column.")
 def setup_aggregates(conn):
     """
     Creates the market_1m_candle continuous aggregate, 
@@ -148,7 +148,7 @@ def consume_and_write():
     setup_database(conn)
     setup_aggregates(conn) 
     insert_sql = """
-        INSERT INTO market_ticks(time, symbol, price, direction, precentage)
+        INSERT INTO market_ticks(time, symbol, price, direction, percentage)
         VALUES (%s, %s, %s, %s, %s);
     """
     print("\nStarting kafka consumer loop... waiting for messages... ")
@@ -167,10 +167,10 @@ def consume_and_write():
                         clean_trade.symbol,
                         clean_trade.price,
                         clean_trade.direction,
-                        clean_trade.precentage
+                        clean_trade.percentage
                     ))
                     conn.commit()
-                    logging.info(f"--- wrote to DB: {clean_trade.symbol}@{clean_trade.price}({clean_trade.precentage}%)")
+                    logging.info(f"--- wrote to DB: {clean_trade.symbol}@{clean_trade.price}({clean_trade.percentage}%)")
 
             except psycopg2.Error as e:
                 logging.error(f"error writing to DB: {e}")
