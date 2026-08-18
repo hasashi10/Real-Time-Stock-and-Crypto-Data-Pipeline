@@ -1,6 +1,7 @@
 venv/
 env/
-.env #secrets and configs
+#secrets and configs
+.env 
 *.log
 
 __pycache__/
