@@ -1,53 +1,106 @@
-# Real-Time Market Data & Crypto Pipeline
+# Real-Time Stock & Crypto Data Pipeline
 
-## 👋 The Story Behind the Code
-Hi! I built this pipeline to bridge the gap between classroom theory and real-world system architecture. As I focus my career on Data Engineering and Cybersecurity, I wanted a hands-on environment to deeply learn Python scripting, handle messy live data, and understand how enterprise systems stay resilient under pressure. 
+An end-to-end streaming data pipeline that ingests live stock and
+cryptocurrency trade data, validates it, stores it in a time-series
+database, and visualizes it on live dashboards — fully containerized
+with Docker.
 
-This isn't just a tutorial project—it's a live sandbox where I am actively learning how to build fault-tolerant data streams, secure containers, and optimize databases. 
+**Data flow:** Alpaca API → Kafka → TimescaleDB → Grafana
 
-## 📖 Project Overview
-A resilient, real-time data engineering pipeline designed to ingest, process, and store live stock and cryptocurrency market ticks. By transforming raw WebSocket streams into highly optimized time-series data, this project demonstrates core concepts in data quality, decoupled architecture, and system security.
+## Why this project
 
-## 🛠️ Technology Stack
-*   **Data Ingestion:** Alpaca API (WebSockets)
-*   **Message Broker:** Apache Kafka (Decoupling, buffering, and stream processing)
-*   **Database:** TimescaleDB / PostgreSQL (Hypertable-optimized time-series storage)
-*   **Containerization:** Docker & Docker Compose
-*   **Language:** Python (3.x)
-*   **Visualization:** Grafana (Upcoming)
+Built to go deep on the "why" behind real data infrastructure decisions,
+not just get a pipeline working — data validation, distributed messaging,
+time-series optimization, observability, and security, in that order.
+See [`DECISIONS.md`](./DECISIONS.md) for the full reasoning and debugging
+log behind each choice.
 
----
+## Architecture
 
-## ✅ Currently Implemented Features
+```
+Alpaca WebSocket (stocks + crypto)
+        │
+        ▼
+  Kafka producers  ──▶  Kafka topic (market_ticks)
+                              │
+                              ▼
+                     Kafka consumer group
+                    (Pydantic validation)
+                              │
+                              ▼
+                   TimescaleDB hypertable
+                    (market_ticks)
+                              │
+                              ▼
+              Continuous aggregate (market_1m_candles)
+                    1-minute OHLC candles,
+                    auto-refreshed on schedule
+                              │
+                              ▼
+                    Grafana dashboards
+              (candlestick charts + pipeline health)
+```
 
-### 1. Core Data Flow
-*   Live WebSocket connection to Alpaca API filtering for specific Crypto/Stock tickers.
-*   Kafka Producer script (`log_crypto_mvp.py`) publishing formatted JSON payloads.
-*   Kafka Consumer script (`consumer.py`) reading streams and executing rapid database inserts.
-*   Automated TimescaleDB schema generation (Hypertables).
+## Components
 
-### 2. Phase 1: Data Quality & Defensive Parsing
-*   **Schema Validation:** Incoming Kafka JSON payloads are intercepted and validated against a strict schema before database insertion.
-*   **Defensive Type Checking:** Verifies numeric types (`int`, `float`) for critical trading metrics (e.g., `price`) to prevent database type-mismatch crashes.
-*   **Non-Blocking Control Flow:** Invalid payloads trigger structured warning logs and utilize Python `continue` statements to safely bypass execution without halting the consumer loop.
-*   **Structured Logging:** Standardized Python `logging` capturing `timestamp`, `levelname`, and operational context for future containerized log aggregation.
+- **`log_crypto_mvp.py`** — streams live crypto trades (BTC/USD, ETH/USD,
+  DOGE/USD) from Alpaca's crypto WebSocket, produces to Kafka.
+- **`log_ticks_mvp.py`** — streams live stock trades (AAPL, MSFT, GOOG,
+  BLK) via Alpaca's IEX feed during market hours, produces to Kafka.
+- **`consumer.py`** — consumes from Kafka, validates every message
+  against a strict Pydantic schema (rejecting malformed data before it
+  ever reaches the database), writes clean data to TimescaleDB, and sets
+  up the database schema, continuous aggregate, refresh policy, and a
+  human-readable view — all idempotently, so the whole schema rebuilds
+  itself correctly on a fresh database.
+- **`docker-compose.yml`** — Zookeeper, Kafka, TimescaleDB, and Grafana,
+  wired together with persistent volumes and health checks.
 
----
+## Key engineering decisions
 
-## 🚀 Development Roadmap
+- **Zero-trust data validation.** Every message is validated against a
+  Pydantic model before it's written anywhere. Invalid data (missing
+  fields, bad types, suspicious prices) is logged and dropped, never
+  silently accepted.
+- **Kafka partition routing + consumer groups.** Messages are keyed by
+  symbol for partition-aware routing; the consumer runs under a named
+  consumer group for load-balanced, fault-tolerant processing.
+- **TimescaleDB continuous aggregates**, not application-level
+  aggregation. 1-minute OHLC candles are computed and incrementally
+  maintained by the database itself on a schedule, so dashboard queries
+  never have to scan raw tick data.
+- **Secrets management.** API keys and database passwords live in a
+  git-ignored `.env` file and are injected via `python-dotenv` (app
+  layer) and Docker Compose's native `${VAR}` substitution
+  (infrastructure layer) — never hardcoded.
+- **Persistent, health-checked infrastructure.** Both stateful services
+  (TimescaleDB, Grafana) run on named Docker volumes so data and
+  dashboards survive container recreation, not just restarts. Health
+  checks (`pg_isready`, `kafka-topics --list`) let Grafana wait for a
+  genuinely ready database instead of just a started container.
 
-*   [x] **Phase 1: Data Quality & Validation** (Defensive parsing, error handling, logging)
-*   [ ] **Phase 2: Kafka Architecture** (Partitioning, keys, topic design, consumer groups)
-*   [ ] **Phase 3: TimescaleDB Optimization** (Continuous aggregates, hypertables, compression)
-*   [ ] **Phase 4: Pipeline Monitoring** (Grafana metrics for both market data & system health)
-*   [ ] **Phase 5: Docker & Security** (Health checks, secrets management via `.env`)
-*   [ ] **Phase 6: Automated Testing** (Unit testing parsing, validation, database writes)
-*   [ ] **Phase 7: Documentation** (Architecture diagrams, final polish)
+## Setup
 
----
+1. Clone the repo and copy `.env.example` to `.env`, filling in your own
+   Alpaca API key/secret and database passwords.
+2. `docker-compose up -d` — starts Kafka, Zookeeper, TimescaleDB, and
+   Grafana.
+3. `python consumer.py` — connects to Kafka and sets up the full
+   database schema (table, hypertable, continuous aggregate, refresh
+   policy, readable view) automatically.
+4. In a separate terminal, run `python log_crypto_mvp.py` (crypto trades
+   24/7) and/or `python log_ticks_mvp.py` (stock trades, market hours
+   only).
+5. Open Grafana at `http://localhost:3000`, connect a PostgreSQL data
+   source pointing at `db:5432` / database `marketdata`, and build
+   candlestick panels against `market_1m_candles`.
 
-## 💻 How to Run Locally (MVP)
-1. Start the infrastructure: `docker-compose up -d`
-2. Activate Virtual Environment: `.\venv\Scripts\Activate.ps1`
-3. Run Consumer: `python consumer.py`
-4. Run Producer: `python log_crypto_mvp.py`
+## What I'd build next
+
+- Automated tests for the Pydantic validation layer and the
+  trend-detection logic in the producers.
+- A Grafana dashboard template variable (`$symbol`) instead of one panel
+  per symbol, so adding a new instrument doesn't require duplicating a
+  panel by hand.
+- Alerting on pipeline health (e.g., notify if tick volume drops to zero
+  during expected trading hours).
