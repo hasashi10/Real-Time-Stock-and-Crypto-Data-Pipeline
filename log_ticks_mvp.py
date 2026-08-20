@@ -38,7 +38,7 @@ trend_tracker = {}
 #open the csv file in 'append' mode and create a writer'
 try:
     csv_file = open(LOG_FILE, 'a', newline='')
-    fieldnames = [ 'timestamp', 'symbol' , 'price', 'direction', 'precentage']
+    fieldnames = [ 'timestamp', 'symbol' , 'price', 'direction', 'percentage']
     writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
 
     #write headers only if the file is new (empty)
@@ -63,11 +63,11 @@ async def on_trade(data):
     current_time =time.time()
 
     direction = None #'up' or 'down'
-    precentage = 0.0
+    percentage = 0.0
 
     if symbol in previous_prices:
         prev_price = previous_prices[symbol]
-        precentage = ((price - prev_price)/ prev_price) *100
+        percentage = ((price - prev_price)/ prev_price) *100
         if price > prev_price:
             direction = 'UP'
         elif price < prev_price:
@@ -95,7 +95,7 @@ async def on_trade(data):
             'symbol': symbol,
             'price': price,
             'direction': direction,
-            'precentage': round(precentage, 4)
+            'percentage': round(percentage, 4)
         }
 
         #print to console and write to csv

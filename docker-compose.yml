@@ -25,6 +25,11 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
   #3. our database: prosgres witht eh tiomescaled extensions
   #timescaled is a better option for real-time-series data than a csv
   db: 
@@ -34,8 +39,15 @@ services:
       - "5432:5432"
     environment:
       POSTGRES_USER: "admin"
-      POSTGRES_PASSWORD: "password"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: "marketdata"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d marketdata"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
   #4.grafana: this sia a dashboarding tool that can visualize our data in the real time
   grafana:
     image: grafana/grafana:latest
@@ -43,7 +55,13 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       GF_SECURITY_ADMIN_USER: "admin"
-      GF_SECURITY_ADMIN_PASSWORD: "password"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+    volumes:
+      - grafana-data:/var/lib/grafana
+volumes:
+  grafana-data:
+  db-data:

@@ -87,7 +87,7 @@ def setup_database(conn):
         print("table 'market_ticks' created.")
 
         cur.execute("""
-            ALTER DATABASE marketdata SET timezone TO 'America/ New_York';
+            ALTER DATABASE marketdata SET timezone TO 'America/New_York';
         """)
         
         cur.execute("""
@@ -142,11 +142,33 @@ def setup_aggregates(conn):
                 print("refresh policy for 'market_1m_candles' is set")
             else:
                 print("refresh policy for 'market_1m_candles' already exists, skipping.")
+def setup_views(conn):
+    """
+    creates a human-readable view of market_1m_candles,
+    formatting the timestamd as 'YYYY-MM-DD HH24:MI' for easier reading
+    """
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE OR REPLACE VIEW candle_readable AS
+            SELECT
+                to_char(bucket, 'YYYY-MM-DD HH24:MI') AS time,
+                symbol,
+                open,
+                high,
+                low,
+                close,
+                trade_count
+            FROM market_1m_candles
+            ORDER BY bucket DESC;
+        """)
+        conn.commit()
+        print("view 'candle_readable' is ready.")
     #---main consumer loop---
 def consume_and_write():
     conn = get_db_connection()
     setup_database(conn)
-    setup_aggregates(conn) 
+    setup_aggregates(conn)
+    setup_views(conn) 
     insert_sql = """
         INSERT INTO market_ticks(time, symbol, price, direction, percentage)
         VALUES (%s, %s, %s, %s, %s);
