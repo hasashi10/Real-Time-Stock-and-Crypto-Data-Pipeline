@@ -1,1 +1,6 @@
 alpaca-py
+kafka-python
+psycopg2-python
+pydantic
+python-dotenv
+pytest

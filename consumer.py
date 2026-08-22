@@ -17,7 +17,7 @@ class TradeData(BaseModel):
     @classmethod
     def check_valid_price(cls, value):
         if value <= 0:
-            raise ValueError(f"suspicious price detectect: {value}")
+            raise ValueError(f"suspicious price detected: {value}")
         return value
 
     
@@ -27,25 +27,23 @@ logging.basicConfig(
     datefmt='%y-%m-%d %H:%M'
 )
 # kafka consumer setup---
-KAFKA_TOPIC = 'market_ticks'
-
-print("connecting to kafka. . .")
-try:
-    consumer = KafkaConsumer(
-        KAFKA_TOPIC,
-        bootstrap_servers = ['localhost:9092'],
-        group_id='market_data_team',
-        #this converts the json bytes into a python dictionary
-        value_deserializer = lambda v:json.loads(v.decode('utf-8')),
-        #this makes sure we read from the begin of the topic if we're a new consumer
-        auto_offset_reset = 'earliest'
-    )
-    print("kafka consumer connected succesfully.")
-except Exception as e:
-    print(f" FAILED TO CONNECT TO KAFKA !!!")
-    print(f" Error: {e}")
-    print("please make sure the Docker containers are running ( ' Docker-compose up -d').")
-    exit()
+def get_kafka_consumer():
+    print("connecting to kafka . .")
+    try:
+        consumer = KafkaConsumer(
+            'market_ticks',
+            bootstrap_servers=['localhost:9092'],
+            group_id='market_data_team',
+            value_deserializer=lambda v: json.loads(v.decode('utf-8')),
+            auto_offset_reset='earliest'
+        )
+        print("kafka consumer connected succesfully.")
+        return consumer
+    except Exception as e:
+        print(f" FAILED TO CONNECT TO KAFKA !!!")
+        print(f" Error: {e}")
+        print("please make sure the Docker containers are running ( ' Docker-compose up -d').")
+        exit()
 
 # database connection-----
 def get_db_connection():
@@ -121,7 +119,7 @@ def setup_aggregates(conn):
                 WITH NO DATA;
              """)
             conn.commit()
-            print("continuous aggrigate 'market_1m_candles' is ready.")
+            print("continuous aggregate 'market_1m_candles' is ready.")
 
             cur.execute("""
                 SELECT COUNT(*) FROM timescaledb_information.jobs
@@ -165,6 +163,7 @@ def setup_views(conn):
         print("view 'candle_readable' is ready.")
     #---main consumer loop---
 def consume_and_write():
+    consumer = get_kafka_consumer()
     conn = get_db_connection()
     setup_database(conn)
     setup_aggregates(conn)
@@ -198,7 +197,7 @@ def consume_and_write():
                 logging.error(f"error writing to DB: {e}")
                 conn.rollback()
     except KeyboardInterrupt:
-        print("\nStoppiing consumer...")
+        print("\nStopping consumer...")
     finally:
         conn.close()
         consumer.close()

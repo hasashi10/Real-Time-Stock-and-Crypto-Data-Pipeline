@@ -94,11 +94,22 @@ Alpaca WebSocket (stocks + crypto)
 5. Open Grafana at `http://localhost:3000`, connect a PostgreSQL data
    source pointing at `db:5432` / database `marketdata`, and build
    candlestick panels against `market_1m_candles`.
+6. **run the test:** run 'pytest.test_models.py' to executre the automated
+    unit tests, verifying the pydantic data firewall and mocked database logic.
+
+## test_model
+
+- ** 'test_models.py'** -An autamated test suite using pytest and magicmock
+    it verifies the pydantic data validation logic (both happy/sad paths)
+    and proves the postgres database setup logic executes correctly using
+    dependency injection.
+- **Automated testing & Mocking.** the pipeline logic is decoupled and encapsulated,
+    allowing for isolated unit testing. "MagicMock' is used to simulate postgres
+    connections, proving the database execution paths are mathematically sound without
+    requiring live, stateful database containers during testing.
 
 ## What I'd build next
 
-- Automated tests for the Pydantic validation layer and the
-  trend-detection logic in the producers.
 - A Grafana dashboard template variable (`$symbol`) instead of one panel
   per symbol, so adding a new instrument doesn't require duplicating a
   panel by hand.
